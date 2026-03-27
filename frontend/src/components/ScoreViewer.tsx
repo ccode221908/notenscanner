@@ -31,9 +31,20 @@ export default function ScoreViewer({ scoreId }: ScoreViewerProps) {
 
         if (cancelled) return;
 
-        const osmd = new OpenSheetMusicDisplay(container, { autoResize: true });
+        const osmd = new OpenSheetMusicDisplay(container, {
+          autoResize: true,
+          drawingParameters: 'default',
+          backend: 'svg',
+          pageFormat: 'Endless',
+        });
         osmdRef.current = osmd;
         await osmd.load(xmlText);
+
+        if (cancelled) return;
+
+        // Wait one animation frame so the container has its final CSS width
+        // before OSMD calculates how many measures fit per line.
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
 
         if (cancelled) return;
 
@@ -71,7 +82,7 @@ export default function ScoreViewer({ scoreId }: ScoreViewerProps) {
       )}
       <div
         ref={containerRef}
-        style={{ minHeight: '400px', background: '#fff' }}
+        style={{ width: '100%', minHeight: '400px', background: '#fff', overflowX: 'auto' }}
       />
     </div>
   );
