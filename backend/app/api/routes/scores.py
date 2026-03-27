@@ -20,65 +20,66 @@ def _get_engine():
     return engine
 
 
-async def process_score(score_id: str, db: Session):
-    """Background task: runs OMR then MuseScore export."""
-    # 1. Load score from DB
-    score = db.get(Score, score_id)
-    if not score:
-        return
+async def process_score(score_id: str):
+    """Background task: runs OMR then MuseScore export. Opens its own DB session."""
+    with Session(_get_engine()) as db:
+        # 1. Load score from DB
+        score = db.get(Score, score_id)
+        if not score:
+            return
 
-    try:
-        # 2. Set status to "processing"
-        score.status = "processing"
-        score.updated_at = datetime.now(timezone.utc)
-        db.add(score)
-        db.commit()
-        db.refresh(score)
+        try:
+            # 2. Set status to "processing"
+            score.status = "processing"
+            score.updated_at = datetime.now(timezone.utc)
+            db.add(score)
+            db.commit()
+            db.refresh(score)
 
-        # 3. Find the input file
-        upload_dir = score_upload_dir(score_id)
-        input_files = list(upload_dir.glob("input.*"))
-        if not input_files:
-            raise FileNotFoundError(f"No input file found in {upload_dir}")
-        input_file = input_files[0]
+            # 3. Find the input file
+            upload_dir = score_upload_dir(score_id)
+            input_files = list(upload_dir.glob("input.*"))
+            if not input_files:
+                raise FileNotFoundError(f"No input file found in {upload_dir}")
+            input_file = input_files[0]
 
-        # 4. Get output dir
-        output_dir = score_output_dir(score_id)
+            # 4. Get output dir
+            output_dir = score_output_dir(score_id)
 
-        # 5. Run OMR
-        musicxml_path = await run_omr(input_file, output_dir)
+            # 5. Run OMR
+            musicxml_path = await run_omr(input_file, output_dir)
 
-        # 6. Set status to "omr_done"
-        score.status = "omr_done"
-        score.updated_at = datetime.now(timezone.utc)
-        db.add(score)
-        db.commit()
+            # 6. Set status to "omr_done"
+            score.status = "omr_done"
+            score.updated_at = datetime.now(timezone.utc)
+            db.add(score)
+            db.commit()
 
-        # 7. Export score via MuseScore
-        result = await export_score(musicxml_path, output_dir)
+            # 7. Export score via MuseScore
+            result = await export_score(musicxml_path, output_dir)
 
-        # 8. Create Part records
-        for part in result["parts"]:
-            db_part = Part(
-                score_id=score_id,
-                name=part["name"],
-                midi_filename=part["midi"].name,
-            )
-            db.add(db_part)
+            # 8. Create Part records
+            for part in result["parts"]:
+                db_part = Part(
+                    score_id=score_id,
+                    name=part["name"],
+                    midi_filename=part["midi"].name,
+                )
+                db.add(db_part)
 
-        # 9. Set status to "ready"
-        score.status = "ready"
-        score.updated_at = datetime.now(timezone.utc)
-        db.add(score)
-        db.commit()
+            # 9. Set status to "ready"
+            score.status = "ready"
+            score.updated_at = datetime.now(timezone.utc)
+            db.add(score)
+            db.commit()
 
-    except Exception as e:
-        # 10. On any exception: set status to "failed"
-        score.status = "failed"
-        score.error_message = str(e)
-        score.updated_at = datetime.now(timezone.utc)
-        db.add(score)
-        db.commit()
+        except Exception as e:
+            # 10. On any exception: set status to "failed"
+            score.status = "failed"
+            score.error_message = str(e)
+            score.updated_at = datetime.now(timezone.utc)
+            db.add(score)
+            db.commit()
 
 
 @router.post("", response_model=ScoreRead, status_code=201)
@@ -110,8 +111,8 @@ async def upload_score(
         content = await file.read()
         dest.write_bytes(content)
 
-        # Start background processing
-        background_tasks.add_task(process_score, score.id, db)
+        # Start background processing (opens its own session)
+        background_tasks.add_task(process_score, score.id)
 
         return ScoreRead.model_validate(score)
 
