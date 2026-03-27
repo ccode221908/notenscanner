@@ -7,13 +7,10 @@ import ScoreList from '../components/ScoreList';
 export default function Home() {
   const [scores, setScores] = useState<ScoreRead[]>([]);
 
-  const fetchScores = useCallback(async () => {
-    try {
-      const data = await listScores();
-      setScores(data);
-    } catch (err) {
-      console.error('Failed to fetch scores:', err);
-    }
+  const fetchScores = useCallback(() => {
+    listScores()
+      .then(setScores)
+      .catch((err) => console.error('Failed to fetch scores:', err));
   }, []);
 
   useEffect(() => {

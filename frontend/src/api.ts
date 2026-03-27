@@ -23,23 +23,23 @@ export async function getScore(id: string): Promise<ScoreDetail> {
 }
 
 export function scoreStatusUrl(id: string): string {
-  return `http://localhost:8000/api/scores/${id}/status`;
+  return `/api/scores/${id}/status`;
 }
 
 export function musicxmlUrl(id: string): string {
-  return `http://localhost:8000/api/scores/${id}/musicxml`;
+  return `/api/scores/${id}/musicxml`;
 }
 
 export function pdfUrl(id: string): string {
-  return `http://localhost:8000/api/scores/${id}/pdf`;
+  return `/api/scores/${id}/pdf`;
 }
 
 export function midiUrl(id: string): string {
-  return `http://localhost:8000/api/scores/${id}/midi`;
+  return `/api/scores/${id}/midi`;
 }
 
 export function partMidiUrl(id: string, partName: string): string {
-  return `http://localhost:8000/api/scores/${id}/parts/${encodeURIComponent(partName)}/midi`;
+  return `/api/scores/${id}/parts/${encodeURIComponent(partName)}/midi`;
 }
 
 export default api;
