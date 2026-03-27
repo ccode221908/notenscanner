@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import type { ScoreDetail } from '../types';
 import { getScore, scoreStatusUrl, pdfUrl } from '../api';
@@ -13,53 +13,44 @@ export default function Score() {
   const [score, setScore] = useState<ScoreDetail | null>(null);
   const [status, setStatus] = useState<string>('pending');
   const [loadError, setLoadError] = useState<string | null>(null);
+  const isTerminalRef = useRef(false);
 
   // Initial fetch of score detail
   useEffect(() => {
     if (!id) return;
+    isTerminalRef.current = false;
 
     getScore(id)
       .then((data) => {
         setScore(data);
         setStatus(data.status);
+        if (TERMINAL_STATUSES.includes(data.status)) {
+          isTerminalRef.current = true;
+        }
       })
       .catch(() => {
         setLoadError('Failed to load score.');
       });
   }, [id]);
 
-  // SSE polling for non-terminal statuses
+  // SSE polling — single persistent connection, only depends on id
   useEffect(() => {
-    if (!id || TERMINAL_STATUSES.includes(status)) return;
+    if (!id) return;
 
     const es = new EventSource(scoreStatusUrl(id));
 
     es.onmessage = (event: MessageEvent) => {
-      try {
-        const data = JSON.parse(event.data as string) as { status: string };
-        const newStatus = data.status;
-        setStatus(newStatus);
+      if (isTerminalRef.current) return;
 
-        if (newStatus === 'ready') {
-          // Re-fetch full score detail to get parts list
-          getScore(id)
-            .then((updated) => {
-              setScore(updated);
-            })
-            .catch(() => {
-              // status already updated, score data may be stale
-            });
-          es.close();
-        } else if (newStatus === 'failed') {
-          getScore(id)
-            .then((updated) => {
-              setScore(updated);
-            })
-            .catch(() => {});
-          es.close();
-        }
-      } catch {
-        // ignore parse errors
+      // Backend sends plain text: "data: ready\n\n" → event.data is "ready"
+      const newStatus = (event.data as string).trim();
+      setStatus(newStatus);
+
+      if (TERMINAL_STATUSES.includes(newStatus)) {
+        isTerminalRef.current = true;
+        es.close();
+        // Re-fetch to get updated parts list / error message
+        getScore(id).then(setScore).catch(() => {});
       }
     };
 
@@ -70,7 +61,7 @@ export default function Score() {
     return () => {
       es.close();
     };
-  }, [id, status]);
+  }, [id]);
 
   if (loadError) {
     return (
