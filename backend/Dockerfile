@@ -13,9 +13,11 @@ RUN apt-get update && apt-get install -y \
     python3-pip \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Audiveris (resolve any unmet deps with apt-get install -f)
+# Install Audiveris (force-remove bad maintainer scripts, then configure)
 RUN wget -q https://github.com/Audiveris/audiveris/releases/download/5.10.2/Audiveris-5.10.2-ubuntu24.04-x86_64.deb -O /tmp/audiveris.deb \
-    && (dpkg -i /tmp/audiveris.deb || apt-get install -f -y) \
+    && dpkg -i /tmp/audiveris.deb || true \
+    && rm -f /var/lib/dpkg/info/audiveris.postinst /var/lib/dpkg/info/audiveris.prerm \
+    && dpkg --configure -a \
     && rm /tmp/audiveris.deb
 
 # Install Python dependencies
