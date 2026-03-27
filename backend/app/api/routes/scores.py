@@ -4,7 +4,7 @@ from typing import List
 from datetime import datetime, timezone
 from pathlib import Path
 
-from app.models import Score, Part, ScoreRead, ScoreDetail
+from app.models import Score, Part, ScoreRead, PartRead, ScoreDetail
 from app.services.storage import score_upload_dir, score_output_dir
 from app.services.audiveris import run_omr
 from app.services.musescore import export_score
@@ -136,8 +136,5 @@ def get_score(score_id: str):
         parts = db.exec(parts_statement).all()
 
         detail = ScoreDetail.model_validate(score)
-        detail.parts = [
-            {"id": p.id, "name": p.name, "midi_filename": p.midi_filename}
-            for p in parts
-        ]
+        detail.parts = [PartRead.model_validate(p) for p in parts]
         return detail
