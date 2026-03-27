@@ -95,14 +95,9 @@ async def export_score(musicxml_file: Path, output_dir: Path) -> Dict[str, Any]:
 
         extract_part_xml(musicxml_file, part_id, part_xml_path)
 
-        try:
-            await _run_musescore(part_xml_path, part_midi_path)
-            logger.info("Exported part MIDI: %s", part_midi_path)
-            parts_result.append({"name": part_name, "midi": part_midi_path})
-        except Exception as exc:
-            logger.warning(
-                "Failed to export MIDI for part %s (%s): %s", part_id, part_name, exc
-            )
+        await _run_musescore(part_xml_path, part_midi_path)
+        logger.info("Exported part MIDI: %s", part_midi_path)
+        parts_result.append({"name": part_name, "midi": part_midi_path})
 
     return {
         "pdf": pdf_path,

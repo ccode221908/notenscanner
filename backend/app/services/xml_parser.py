@@ -8,7 +8,6 @@ logger = logging.getLogger(__name__)
 
 # MusicXML may use a namespace; we handle both namespaced and bare elements.
 _NS_PARTWISE = "http://www.musicxml.org/dtd/partwise"
-_NS_MAP = {"mxl": _NS_PARTWISE}
 
 
 def _find_root(tree: ET.ElementTree) -> ET.Element:
