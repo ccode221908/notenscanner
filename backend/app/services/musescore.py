@@ -13,13 +13,18 @@ TIMEOUT_SECONDS = 120
 
 
 def _musescore_env() -> dict:
-    return {**os.environ, "DISPLAY": ":99", "QT_QPA_PLATFORM": "xcb"}
+    display = os.environ.get("XVFB_DISPLAY", ":99")
+    return {**os.environ, "DISPLAY": display, "QT_QPA_PLATFORM": "xcb"}
+
+
+def _musescore_cmd() -> str:
+    return os.environ.get("MUSESCORE_BIN", "musescore3")
 
 
 async def _run_musescore(input_file: Path, output_path: Path) -> None:
     """Run MuseScore to convert input_file to output_path."""
     env = _musescore_env()
-    cmd = ["snap", "run", "musescore", "-o", str(output_path), str(input_file)]
+    cmd = [_musescore_cmd(), "-o", str(output_path), str(input_file)]
     logger.info("Running MuseScore: %s", " ".join(cmd))
 
     proc = await asyncio.create_subprocess_exec(
