@@ -1,0 +1,54 @@
+import { useState } from 'react';
+import 'html-midi-player';
+import type { PartRead } from '../types';
+import { midiUrl, partMidiUrl } from '../api';
+
+interface PartPlayerProps {
+  scoreId: string;
+  parts: PartRead[];
+}
+
+export default function PartPlayer({ scoreId, parts }: PartPlayerProps) {
+  const [selectedPart, setSelectedPart] = useState<string | null>(null);
+
+  if (parts.length === 0) {
+    return <div style={{ padding: '16px', color: '#666' }}>No MIDI available</div>;
+  }
+
+  const currentMidiUrl =
+    selectedPart === null ? midiUrl(scoreId) : partMidiUrl(scoreId, selectedPart);
+
+  return (
+    <div style={{ padding: '16px' }}>
+      <div style={{ marginBottom: '12px' }}>
+        <label htmlFor="part-select" style={{ marginRight: '8px', fontWeight: 'bold' }}>
+          Part:
+        </label>
+        <select
+          id="part-select"
+          value={selectedPart ?? ''}
+          onChange={(e) => setSelectedPart(e.target.value === '' ? null : e.target.value)}
+        >
+          <option value="">Full score</option>
+          {parts.map((part) => (
+            <option key={part.id} value={part.name}>
+              {part.name}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <midi-player src={currentMidiUrl} sound-font="" />
+
+      <div style={{ marginTop: '12px' }}>
+        <a
+          href={currentMidiUrl}
+          download
+          style={{ color: '#0066cc', textDecoration: 'underline' }}
+        >
+          Download MIDI
+        </a>
+      </div>
+    </div>
+  );
+}
