@@ -6,6 +6,20 @@ interface ScoreViewerProps {
   scoreId: string;
 }
 
+/** Poll until the element has a real rendered width (> 50px). */
+function waitForWidth(el: HTMLElement): Promise<void> {
+  return new Promise((resolve) => {
+    const check = () => {
+      if (el.offsetWidth > 50) {
+        resolve();
+      } else {
+        requestAnimationFrame(check);
+      }
+    };
+    check();
+  });
+}
+
 export default function ScoreViewer({ scoreId }: ScoreViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const osmdRef = useRef<OpenSheetMusicDisplay | null>(null);
@@ -28,31 +42,25 @@ export default function ScoreViewer({ scoreId }: ScoreViewerProps) {
           throw new Error(`Failed to fetch MusicXML: ${res.status} ${res.statusText}`);
         }
         const xmlText = await res.text();
+        if (cancelled) return;
 
+        // Wait for the container to have its real CSS width before handing it to
+        // OSMD — otherwise OSMD sees offsetWidth=0 and puts one measure per line.
+        await waitForWidth(container);
         if (cancelled) return;
 
         const osmd = new OpenSheetMusicDisplay(container, {
           autoResize: true,
           drawingParameters: 'default',
           backend: 'svg',
-          pageFormat: 'Endless',
         });
         osmdRef.current = osmd;
+
         await osmd.load(xmlText);
-
-        if (cancelled) return;
-
-        // Wait one animation frame so the container has its final CSS width
-        // before OSMD calculates how many measures fit per line.
-        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-
         if (cancelled) return;
 
         await osmd.render();
-
-        if (!cancelled) {
-          setLoading(false);
-        }
+        if (!cancelled) setLoading(false);
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : 'Failed to load score');
@@ -75,10 +83,10 @@ export default function ScoreViewer({ scoreId }: ScoreViewerProps) {
   return (
     <div>
       {loading && (
-        <div style={{ padding: '16px', color: '#666' }}>Loading score...</div>
+        <div style={{ padding: '16px', color: '#666' }}>Partitur wird geladen...</div>
       )}
       {error && (
-        <div style={{ padding: '16px', color: '#c00' }}>Error: {error}</div>
+        <div style={{ padding: '16px', color: '#c00' }}>Fehler: {error}</div>
       )}
       <div
         ref={containerRef}
