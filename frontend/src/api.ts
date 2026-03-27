@@ -22,6 +22,15 @@ export async function getScore(id: string): Promise<ScoreDetail> {
   return response.data;
 }
 
+export async function renameScore(id: string, displayName: string): Promise<ScoreRead> {
+  const response = await api.patch<ScoreRead>(`/api/scores/${id}`, { display_name: displayName });
+  return response.data;
+}
+
+export async function deleteScore(id: string): Promise<void> {
+  await api.delete(`/api/scores/${id}`);
+}
+
 export function scoreStatusUrl(id: string): string {
   return `/api/scores/${id}/status`;
 }
@@ -40,6 +49,10 @@ export function midiUrl(id: string): string {
 
 export function partMidiUrl(id: string, partName: string): string {
   return `/api/scores/${id}/parts/${encodeURIComponent(partName)}/midi`;
+}
+
+export function exportUrl(id: string, fmt: string): string {
+  return `/api/scores/${id}/export/${fmt}`;
 }
 
 export default api;

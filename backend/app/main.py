@@ -28,6 +28,13 @@ app.add_middleware(
 @app.on_event("startup")
 def on_startup():
     create_db()
+    # Auto-migrate: add display_name column if it doesn't exist yet (SQLite)
+    from sqlalchemy import text
+    with engine.connect() as conn:
+        cols = [row[1] for row in conn.execute(text("PRAGMA table_info(score)")).fetchall()]
+        if "display_name" not in cols:
+            conn.execute(text("ALTER TABLE score ADD COLUMN display_name TEXT"))
+            conn.commit()
 
 app.include_router(scores.router, prefix="/api")
 app.include_router(files.router, prefix="/api")

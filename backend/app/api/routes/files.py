@@ -7,49 +7,63 @@ from sqlmodel import Session, select
 
 from app.models import Score, Part
 from app.services.storage import score_output_dir, parts_dir
+from app.services.musescore import _run_musescore
 
 router = APIRouter(prefix="/scores", tags=["files"])
 logger = logging.getLogger(__name__)
 
-SSE_MAX_SECONDS = 300  # 5 minutes
+SSE_MAX_SECONDS = 300
 _UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.IGNORECASE)
+
+# On-demand export formats: extension -> (media_type, description)
+EXPORT_FORMATS = {
+    "mxl":  ("application/vnd.recordare.musicxml", "MusicXML compressed"),
+    "mscz": ("application/octet-stream",           "MuseScore native"),
+    "ly":   ("text/x-lilypond",                    "LilyPond"),
+    "mp3":  ("audio/mpeg",                         "MP3 audio"),
+}
 
 
 def _get_engine():
-    """Lazy import to avoid circular import with app.main."""
     from app.main import engine
     return engine
 
 
 def _validate_score_id(score_id: str) -> None:
-    """Raise 400 if score_id is not a valid UUID (prevents path traversal)."""
     if not _UUID_RE.match(score_id):
         raise HTTPException(status_code=400, detail="Invalid score ID")
 
 
-def _require_score(db: Session, score_id: str) -> Score:
-    """Raise 404 if score does not exist in DB."""
+def _require_ready_score(db: Session, score_id: str) -> Score:
     score = db.get(Score, score_id)
     if not score:
         raise HTTPException(status_code=404, detail="Score not found")
+    if score.status != "ready":
+        raise HTTPException(status_code=409, detail="Score is not ready yet")
     return score
+
+
+def _find_musicxml(score_id: str):
+    """Return path to the extracted MusicXML file for a score."""
+    output_dir = score_output_dir(score_id)
+    xml_files = [f for f in output_dir.glob("*.xml") if f.parent == output_dir]
+    if not xml_files:
+        raise HTTPException(status_code=404, detail="MusicXML source file not found")
+    return xml_files[0]
 
 
 @router.get("/{score_id}/status")
 async def score_status_sse(score_id: str):
-    """Server-Sent Events stream for processing status."""
     _validate_score_id(score_id)
 
     async def event_generator():
         elapsed = 0
-        # Single session for the lifetime of this SSE connection
         with Session(_get_engine()) as db:
             while elapsed < SSE_MAX_SECONDS:
                 score = db.get(Score, score_id)
                 if not score:
                     yield "data: not_found\n\n"
                     return
-                # Expire cached attributes to get fresh data on each poll
                 db.expire(score)
                 score = db.get(Score, score_id)
                 status = score.status
@@ -71,36 +85,37 @@ async def score_status_sse(score_id: str):
 def get_musicxml(score_id: str):
     _validate_score_id(score_id)
     with Session(_get_engine()) as db:
-        _require_score(db, score_id)
-    output_dir = score_output_dir(score_id)
-    xml_files = [f for f in output_dir.glob("*.xml") if f.parent == output_dir]
-    if not xml_files:
-        raise HTTPException(status_code=404, detail="MusicXML file not found")
-    return FileResponse(path=str(xml_files[0]), media_type="application/xml")
+        _require_ready_score(db, score_id)
+    xml_path = _find_musicxml(score_id)
+    return FileResponse(
+        path=str(xml_path),
+        media_type="application/xml",
+        filename=xml_path.name,
+    )
 
 
 @router.get("/{score_id}/pdf")
 def get_pdf(score_id: str):
     _validate_score_id(score_id)
     with Session(_get_engine()) as db:
-        _require_score(db, score_id)
+        _require_ready_score(db, score_id)
     output_dir = score_output_dir(score_id)
     pdf_files = [f for f in output_dir.glob("*.pdf") if f.parent == output_dir]
     if not pdf_files:
         raise HTTPException(status_code=404, detail="PDF file not found")
-    return FileResponse(path=str(pdf_files[0]))
+    return FileResponse(path=str(pdf_files[0]), filename=pdf_files[0].name)
 
 
 @router.get("/{score_id}/midi")
 def get_midi(score_id: str):
     _validate_score_id(score_id)
     with Session(_get_engine()) as db:
-        _require_score(db, score_id)
+        _require_ready_score(db, score_id)
     output_dir = score_output_dir(score_id)
     midi_files = [f for f in output_dir.glob("*.mid") if f.parent == output_dir]
     if not midi_files:
         raise HTTPException(status_code=404, detail="MIDI file not found")
-    return FileResponse(path=str(midi_files[0]), media_type="audio/midi")
+    return FileResponse(path=str(midi_files[0]), media_type="audio/midi", filename=midi_files[0].name)
 
 
 @router.get("/{score_id}/parts/{part_name}/midi")
@@ -119,4 +134,28 @@ def get_part_midi(score_id: str, part_name: str):
         if not midi_path.exists():
             raise HTTPException(status_code=404, detail="Part MIDI file not found")
 
-        return FileResponse(path=str(midi_path), media_type="audio/midi")
+        return FileResponse(path=str(midi_path), media_type="audio/midi", filename=part.midi_filename)
+
+
+@router.get("/{score_id}/export/{fmt}")
+async def export_format(score_id: str, fmt: str):
+    """On-demand export: generate file with MuseScore if not already cached."""
+    _validate_score_id(score_id)
+    if fmt not in EXPORT_FORMATS:
+        raise HTTPException(status_code=400, detail=f"Unknown format '{fmt}'. Supported: {', '.join(EXPORT_FORMATS)}")
+
+    with Session(_get_engine()) as db:
+        _require_ready_score(db, score_id)
+
+    media_type, _ = EXPORT_FORMATS[fmt]
+    xml_path = _find_musicxml(score_id)
+    output_path = score_output_dir(score_id) / f"{xml_path.stem}.{fmt}"
+
+    if not output_path.exists():
+        logger.info("Generating %s export for %s", fmt, score_id)
+        await _run_musescore(xml_path, output_path)
+
+    if not output_path.exists():
+        raise HTTPException(status_code=500, detail=f"Export to {fmt} failed")
+
+    return FileResponse(path=str(output_path), media_type=media_type, filename=output_path.name)

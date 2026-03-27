@@ -25,7 +25,11 @@ export default function Home() {
     <div style={{ padding: '32px 16px', fontFamily: 'sans-serif', maxWidth: '900px', margin: '0 auto' }}>
       <h1 style={{ textAlign: 'center', marginBottom: '32px' }}>Sheet Music Web</h1>
       <UploadZone onUploaded={handleUploaded} />
-      <ScoreList scores={scores} onRefresh={fetchScores} />
+      <ScoreList
+        scores={scores}
+        onRefresh={fetchScores}
+        onDeleted={(id) => setScores((prev) => prev.filter((s) => s.id !== id))}
+      />
     </div>
   );
 }

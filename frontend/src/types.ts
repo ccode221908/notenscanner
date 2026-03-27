@@ -2,6 +2,7 @@ export interface ScoreRead {
   id: string;
   filename: string;
   original_filename: string;
+  display_name: string | null;
   status: string; // pending | processing | omr_done | omr_failed | ready | failed
   created_at: string;
   updated_at: string;

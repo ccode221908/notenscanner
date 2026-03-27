@@ -6,6 +6,7 @@ import uuid
 class ScoreBase(SQLModel):
     filename: str
     original_filename: str
+    display_name: Optional[str] = None  # user-editable label; falls back to original_filename
 
 class Score(ScoreBase, table=True):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
@@ -28,6 +29,9 @@ class ScoreRead(ScoreBase):
     created_at: datetime
     updated_at: datetime
     error_message: Optional[str] = None
+
+class ScoreRename(SQLModel):
+    display_name: str
 
 class PartRead(SQLModel):
     id: str
