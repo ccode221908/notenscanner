@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlmodel import SQLModel
 from sqlalchemy import create_engine
 from app.config import settings
+import app.models  # noqa: F401 — must import before create_all to register table metadata
 from app.api.routes import scores, files
 
 # Ensure data dirs exist
