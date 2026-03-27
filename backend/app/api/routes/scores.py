@@ -1,3 +1,4 @@
+import logging
 from fastapi import APIRouter, BackgroundTasks, File, HTTPException, UploadFile
 from sqlmodel import Session, select
 from typing import List
@@ -10,6 +11,7 @@ from app.services.audiveris import run_omr
 from app.services.musescore import export_score
 
 router = APIRouter(prefix="/scores", tags=["scores"])
+logger = logging.getLogger(__name__)
 
 ALLOWED_EXTENSIONS = {".png", ".jpg", ".jpeg", ".tiff", ".tif", ".pdf"}
 
@@ -74,12 +76,15 @@ async def process_score(score_id: str):
             db.commit()
 
         except Exception as e:
-            # 10. On any exception: set status to "failed"
-            score.status = "failed"
-            score.error_message = str(e)
-            score.updated_at = datetime.now(timezone.utc)
-            db.add(score)
-            db.commit()
+            logger.exception("Processing failed for score %s: %s", score_id, e)
+            try:
+                score.status = "failed"
+                score.error_message = str(e)
+                score.updated_at = datetime.now(timezone.utc)
+                db.add(score)
+                db.commit()
+            except Exception as commit_err:
+                logger.exception("Failed to persist error state for score %s: %s", score_id, commit_err)
 
 
 @router.post("", response_model=ScoreRead, status_code=201)
