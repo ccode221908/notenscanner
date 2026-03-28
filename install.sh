@@ -61,7 +61,9 @@ if [[ ! -f "$AUDIVERIS_DIR/bin/Audiveris" ]]; then
     info "Lade Audiveris 5.10.2 herunter (.deb fuer Ubuntu 24.04)..."
     DEB_TMP=$(mktemp /tmp/audiveris-XXXXXX.deb)
     curl -L -o "$DEB_TMP" "$AUDIVERIS_DEB_URL"
-    dpkg -i "$DEB_TMP"
+    # Post-install script schlaegt in Containern fehl (xdg-desktop-menu fehlt) —
+    # das ist harmlos, die Binaerdateien werden trotzdem installiert.
+    dpkg -i "$DEB_TMP" || true
     rm -f "$DEB_TMP"
     # Das .deb installiert nach /opt/audiveris
     [[ -f "$AUDIVERIS_DIR/bin/Audiveris" ]] || die "Audiveris-Installation fehlgeschlagen. Pfad: $AUDIVERIS_DIR/bin/Audiveris"
