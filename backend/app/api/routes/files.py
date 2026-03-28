@@ -1,7 +1,6 @@
 import asyncio
 import logging
 import re
-import xml.etree.ElementTree as ET
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from sqlmodel import Session, select
@@ -45,21 +44,15 @@ def _require_ready_score(db: Session, score_id: str) -> Score:
 
 
 def _strip_forced_breaks(xml_bytes: bytes) -> bytes:
-    """Remove new-system/new-page forced breaks so OSMD reflows to browser width."""
-    try:
-        root = ET.fromstring(xml_bytes)
-        changed = False
-        for el in root.iter('print'):
-            for attr in ('new-system', 'new-page'):
-                if el.get(attr) is not None:
-                    del el.attrib[attr]
-                    changed = True
-        if not changed:
-            return xml_bytes
-        return ET.tostring(root, encoding='unicode').encode('utf-8')
-    except Exception as exc:
-        logger.warning("Could not strip forced breaks: %s", exc)
-        return xml_bytes
+    """Remove new-system/new-page forced breaks so OSMD reflows to browser width.
+
+    Uses regex on the raw bytes to avoid re-serialisation via ElementTree,
+    which strips the XML declaration and DOCTYPE that OSMD requires.
+    """
+    text = xml_bytes.decode('utf-8', errors='replace')
+    text = re.sub(r'\s+new-system="yes"', '', text)
+    text = re.sub(r'\s+new-page="yes"', '', text)
+    return text.encode('utf-8')
 
 
 def _find_musicxml(score_id: str):
