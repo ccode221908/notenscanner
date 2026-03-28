@@ -47,9 +47,12 @@ apt-get install -y --no-install-recommends \
     tesseract-ocr-eng \
     tesseract-ocr-deu
 
-# Node.js 20 LTS via NodeSource (Ubuntu-Repo liefert nur 18, zu alt fuer Vite)
+# Node.js 20 LTS via NodeSource (Ubuntu-Repo liefert nur v18, zu alt fuer Vite).
+# Ubuntu-npm kollidiert mit NodeSource-nodejs (der npm eingebaut hat) —
+# deshalb zuerst alte Pakete entfernen.
 if ! node --version 2>/dev/null | grep -qE '^v(20|22|23|24)'; then
     info "Installiere Node.js 20 LTS (NodeSource)..."
+    apt-get remove -y nodejs npm 2>/dev/null || true
     curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
     apt-get install -y nodejs
 fi
