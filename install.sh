@@ -49,10 +49,11 @@ apt-get install -y --no-install-recommends \
 
 # Node.js 20 LTS via NodeSource (Ubuntu-Repo liefert nur v18, zu alt fuer Vite).
 # Ubuntu-npm kollidiert mit NodeSource-nodejs (der npm eingebaut hat) —
-# deshalb zuerst alte Pakete entfernen.
+# deshalb zuerst alle alten Node-Pakete inkl. ihrer dpkg-State-Eintraege entfernen.
 if ! node --version 2>/dev/null | grep -qE '^v(20|22|23|24)'; then
     info "Installiere Node.js 20 LTS (NodeSource)..."
-    apt-get remove -y nodejs npm 2>/dev/null || true
+    dpkg --force-all --purge npm nodejs 2>/dev/null || true
+    apt-get install -f -y 2>/dev/null || true
     curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
     apt-get install -y nodejs
 fi
