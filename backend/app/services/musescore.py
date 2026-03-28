@@ -74,7 +74,12 @@ async def export_score(musicxml_file: Path, output_dir: Path) -> Dict[str, Any]:
 
     stem = musicxml_file.stem
 
-    # 1. Export full PDF
+    # 1a. Export MuseScore-normalised MusicXML (used by the browser viewer)
+    clean_xml_path = output_dir / f"{stem}.ms.musicxml"
+    await _run_musescore(musicxml_file, clean_xml_path)
+    logger.info("Exported clean MusicXML: %s", clean_xml_path)
+
+    # 1b. Export full PDF
     pdf_path = output_dir / f"{stem}.pdf"
     await _run_musescore(musicxml_file, pdf_path)
     logger.info("Exported PDF: %s", pdf_path)
