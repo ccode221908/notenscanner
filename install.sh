@@ -15,8 +15,8 @@ AUDIVERIS_DIR=/opt/audiveris
 TESSDATA_DIR=/root/.config/AudiverisLtd/audiveris/tessdata
 WEB_ROOT=/var/www/sheet-music-web
 
-# Audiveris 5.10.2 release download URL
-AUDIVERIS_URL="https://github.com/Audiveris/audiveris/releases/download/5.10.2/Audiveris_5.10.2.zip"
+# Audiveris 5.10.2 — .deb fuer Ubuntu 24.04
+AUDIVERIS_DEB_URL="https://github.com/Audiveris/audiveris/releases/download/5.10.2/Audiveris-5.10.2-ubuntu24.04-x86_64.deb"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -39,9 +39,6 @@ apt-get install -y --no-install-recommends \
     musescore3 \
     xvfb \
     ghostscript \
-    nginx \
-    certbot \
-    python3-certbot-nginx \
     python3.12 \
     python3.12-venv \
     python3-pip \
@@ -52,24 +49,25 @@ apt-get install -y --no-install-recommends \
     tesseract-ocr-eng \
     tesseract-ocr-deu
 
+# nginx + certbot nur installieren wenn eine Domain angegeben wird
+if [[ -n "${1:-}" ]]; then
+    apt-get install -y --no-install-recommends nginx certbot python3-certbot-nginx
+fi
+
 # -----------------------------------------------------------------------------
-# 2. Audiveris installieren
+# 2. Audiveris installieren (via .deb)
 # -----------------------------------------------------------------------------
 if [[ ! -f "$AUDIVERIS_DIR/bin/Audiveris" ]]; then
-    info "Lade Audiveris 5.10.2 herunter..."
-    mkdir -p "$AUDIVERIS_DIR"
-    curl -L -o "$AUDIVERIS_DIR/audiveris.zip" "$AUDIVERIS_URL"
-    unzip -q "$AUDIVERIS_DIR/audiveris.zip" -d "$AUDIVERIS_DIR"
-    # Das Zip entpackt in ein Unterverzeichnis — Dateien eine Ebene nach oben verschieben
-    INNER=$(find "$AUDIVERIS_DIR" -maxdepth 1 -mindepth 1 -type d | head -1)
-    if [[ -n "$INNER" && "$INNER" != "$AUDIVERIS_DIR" ]]; then
-        mv "$INNER"/* "$AUDIVERIS_DIR/"
-        rmdir "$INNER"
-    fi
-    chmod +x "$AUDIVERIS_DIR/bin/Audiveris"
+    info "Lade Audiveris 5.10.2 herunter (.deb fuer Ubuntu 24.04)..."
+    DEB_TMP=$(mktemp /tmp/audiveris-XXXXXX.deb)
+    curl -L -o "$DEB_TMP" "$AUDIVERIS_DEB_URL"
+    dpkg -i "$DEB_TMP"
+    rm -f "$DEB_TMP"
+    # Das .deb installiert nach /opt/audiveris
+    [[ -f "$AUDIVERIS_DIR/bin/Audiveris" ]] || die "Audiveris-Installation fehlgeschlagen. Pfad: $AUDIVERIS_DIR/bin/Audiveris"
     info "Audiveris installiert: $AUDIVERIS_DIR"
 else
-    info "Audiveris bereits vorhanden, überspringe."
+    info "Audiveris bereits vorhanden, ueberspringe."
 fi
 
 # -----------------------------------------------------------------------------

@@ -77,11 +77,10 @@ apt-get install -y \
 ### 2. Audiveris 5.10.2
 
 ```bash
-mkdir -p /opt/audiveris
-curl -L -o /opt/audiveris/audiveris.zip \
-  https://github.com/Audiveris/audiveris/releases/download/5.10.2/Audiveris_5.10.2.zip
-unzip /opt/audiveris/audiveris.zip -d /opt/audiveris
-chmod +x /opt/audiveris/bin/Audiveris
+curl -L -o /tmp/audiveris.deb \
+  https://github.com/Audiveris/audiveris/releases/download/5.10.2/Audiveris-5.10.2-ubuntu24.04-x86_64.deb
+dpkg -i /tmp/audiveris.deb
+# installiert nach /opt/audiveris/bin/Audiveris
 ```
 
 ### 3. Tesseract-Sprachdaten (Legacy-Format)
