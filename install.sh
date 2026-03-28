@@ -59,11 +59,19 @@ fi
 # -----------------------------------------------------------------------------
 if [[ ! -f "$AUDIVERIS_DIR/bin/Audiveris" ]]; then
     info "Lade Audiveris 5.10.2 herunter (.deb fuer Ubuntu 24.04)..."
+
+    # Das post-install script ruft xdg-desktop-menu auf, das in Containern/
+    # headless-Servern fehlt und exit 3 zurueckgibt — dpkg bricht dann ab.
+    # Loesung: Dummy-Wrapper anlegen, der einfach erfolgreich endet.
+    if ! command -v xdg-desktop-menu &>/dev/null; then
+        echo '#!/bin/sh' > /usr/local/bin/xdg-desktop-menu
+        chmod +x /usr/local/bin/xdg-desktop-menu
+        info "  Dummy xdg-desktop-menu angelegt (headless Container)"
+    fi
+
     DEB_TMP=$(mktemp /tmp/audiveris-XXXXXX.deb)
     curl -L -o "$DEB_TMP" "$AUDIVERIS_DEB_URL"
-    # Post-install script schlaegt in Containern fehl (xdg-desktop-menu fehlt) —
-    # das ist harmlos, die Binaerdateien werden trotzdem installiert.
-    dpkg -i "$DEB_TMP" || true
+    dpkg -i "$DEB_TMP"
     rm -f "$DEB_TMP"
     # Das .deb installiert nach /opt/audiveris
     [[ -f "$AUDIVERIS_DIR/bin/Audiveris" ]] || die "Audiveris-Installation fehlgeschlagen. Pfad: $AUDIVERIS_DIR/bin/Audiveris"
