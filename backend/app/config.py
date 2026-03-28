@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 8000
     frontend_dist: str = ""  # absolute path to frontend/dist; enables built-in static serving
+    cors_origins: str = "http://localhost:5173,http://localhost:3000"
 
     @property
     def uploads_dir(self) -> Path:
