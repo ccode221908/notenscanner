@@ -1,5 +1,8 @@
+import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from sqlmodel import SQLModel
 from sqlalchemy import create_engine
 from app.config import settings
@@ -64,3 +67,16 @@ app.include_router(files.router, prefix="/api")
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+# Serve built frontend static files if FRONTEND_DIST is set and exists.
+# This removes the nginx dependency when running behind a reverse proxy.
+_frontend_dist = os.environ.get("FRONTEND_DIST", "")
+if _frontend_dist and os.path.isdir(_frontend_dist):
+    _assets = os.path.join(_frontend_dist, "assets")
+    if os.path.isdir(_assets):
+        app.mount("/assets", StaticFiles(directory=_assets), name="assets")
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    def serve_spa(full_path: str):
+        index = os.path.join(_frontend_dist, "index.html")
+        return FileResponse(index)

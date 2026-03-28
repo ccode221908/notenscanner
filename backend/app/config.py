@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     xvfb_display: str = ":99"                             # virtual framebuffer display
     host: str = "0.0.0.0"
     port: int = 8000
+    frontend_dist: str = ""  # absolute path to frontend/dist; enables built-in static serving
 
     @property
     def uploads_dir(self) -> Path:

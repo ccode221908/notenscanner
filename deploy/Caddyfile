@@ -1,0 +1,18 @@
+# Caddyfile fuer den Reverse-Proxy-Container
+# Ersetze DEINE_DOMAIN und APP_CONTAINER_IP entsprechend.
+#
+# Caddy holt TLS-Zertifikate automatisch via Let's Encrypt.
+# Voraussetzung: Port 80 und 443 sind von aussen erreichbar.
+
+DEINE_DOMAIN {
+    reverse_proxy APP_CONTAINER_IP:8000 {
+        # SSE (Server-Sent Events) fuer den Status-Stream
+        flush_interval -1
+
+        # Grosse Uploads (PDFs) ermoeglichen
+        transport http {
+            read_timeout  310s
+            write_timeout 310s
+        }
+    }
+}
