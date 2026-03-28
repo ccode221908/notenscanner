@@ -9,6 +9,7 @@ RUN apt-get update && apt-get install -y \
     xvfb \
     musescore3 \
     libsndfile1 \
+    ghostscript \
     python3.12 \
     python3-pip \
     && rm -rf /var/lib/apt/lists/*
