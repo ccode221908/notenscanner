@@ -44,14 +44,28 @@ def _require_ready_score(db: Session, score_id: str) -> Score:
 
 
 def _strip_forced_breaks(xml_bytes: bytes) -> bytes:
-    """Remove new-system/new-page forced breaks so OSMD reflows to browser width.
+    """Remove forced layout hints so OSMD reflows freely to browser width.
 
     Uses regex on the raw bytes to avoid re-serialisation via ElementTree,
     which strips the XML declaration and DOCTYPE that OSMD requires.
     """
     text = xml_bytes.decode('utf-8', errors='replace')
+    # Remove new-system / new-page attributes on <print> elements
     text = re.sub(r'\s+new-system="yes"', '', text)
     text = re.sub(r'\s+new-page="yes"', '', text)
+    # Remove <system-layout> blocks — OSMD creates a new system for any <print>
+    # that contains <system-layout>, even without new-system="yes"
+    text = re.sub(r'\s*<system-layout>.*?</system-layout>', '', text, flags=re.DOTALL)
+    # Remove <time-modification> blocks that lack <normal-type> — OSMD's Fraction
+    # crashes with 'realValue undefined' on any actual:normal ratio without it
+    def _drop_if_no_normal_type(m: re.Match) -> str:
+        return '' if '<normal-type>' not in m.group(0) else m.group(0)
+    text = re.sub(
+        r'\s*<time-modification>.*?</time-modification>',
+        _drop_if_no_normal_type,
+        text,
+        flags=re.DOTALL,
+    )
     return text.encode('utf-8')
 
 
@@ -62,6 +76,12 @@ def _find_musicxml(score_id: str):
     if not xml_files:
         raise HTTPException(status_code=404, detail="MusicXML source file not found")
     return xml_files[0]
+
+
+def _find_svg_pages(score_id: str, xml_stem: str) -> list:
+    """Return sorted list of per-page SVGs: {stem}-1.svg, {stem}-2.svg, ..."""
+    output_dir = score_output_dir(score_id)
+    return sorted(output_dir.glob(f"{xml_stem}-*.svg"))
 
 
 @router.get("/{score_id}/status")
@@ -186,3 +206,44 @@ async def export_format(score_id: str, fmt: str):
         raise HTTPException(status_code=500, detail=f"Export to {fmt} failed")
 
     return FileResponse(path=str(output_path), media_type=media_type, filename=output_path.name)
+
+
+@router.get("/{score_id}/svg")
+async def get_svg_info(score_id: str):
+    """Return SVG page count; generate SVGs on demand if not yet cached."""
+    _validate_score_id(score_id)
+    with Session(_get_engine()) as db:
+        _require_ready_score(db, score_id)
+
+    xml_path = _find_musicxml(score_id)
+    pages = _find_svg_pages(score_id, xml_path.stem)
+
+    if not pages:
+        # Prefer the MuseScore-normalised XML for better SVG rendering quality.
+        ms_path = xml_path.with_suffix(".ms.musicxml")
+        svg_source = ms_path if ms_path.exists() else xml_path
+        svg_target = score_output_dir(score_id) / f"{xml_path.stem}.svg"
+        await _run_musescore(svg_source, svg_target)
+        pages = _find_svg_pages(score_id, xml_path.stem)
+
+    return {"pages": len(pages)}
+
+
+@router.get("/{score_id}/svg/{page}")
+async def get_svg_page(score_id: str, page: int):
+    """Serve one SVG page (1-indexed)."""
+    _validate_score_id(score_id)
+    with Session(_get_engine()) as db:
+        _require_ready_score(db, score_id)
+
+    xml_path = _find_musicxml(score_id)
+    pages = _find_svg_pages(score_id, xml_path.stem)
+
+    if not pages or page < 1 or page > len(pages):
+        raise HTTPException(status_code=404, detail="SVG page not found")
+
+    return FileResponse(
+        path=str(pages[page - 1]),
+        media_type="image/svg+xml",
+        filename=pages[page - 1].name,
+    )

@@ -3,9 +3,10 @@ import type { ScoreRead, ScoreDetail } from './types';
 
 const api = axios.create({ baseURL: '' });
 
-export async function uploadScore(file: File): Promise<ScoreRead> {
+export async function uploadScore(file: File, ocr: boolean = false): Promise<ScoreRead> {
   const formData = new FormData();
   formData.append('file', file);
+  formData.append('ocr', String(ocr));
   const response = await api.post<ScoreRead>('/api/scores', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
   });
@@ -53,6 +54,14 @@ export function partMidiUrl(id: string, partName: string): string {
 
 export function exportUrl(id: string, fmt: string): string {
   return `/api/scores/${id}/export/${fmt}`;
+}
+
+export function svgInfoUrl(id: string): string {
+  return `/api/scores/${id}/svg`;
+}
+
+export function svgPageUrl(id: string, page: number): string {
+  return `/api/scores/${id}/svg/${page}`;
 }
 
 export default api;

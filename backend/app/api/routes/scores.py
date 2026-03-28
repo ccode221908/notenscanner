@@ -1,6 +1,6 @@
 import logging
 import shutil
-from fastapi import APIRouter, BackgroundTasks, File, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, UploadFile
 from sqlmodel import Session, select
 from typing import List
 from datetime import datetime, timezone
@@ -32,7 +32,7 @@ def _validate_score_id(score_id: str) -> None:
         raise HTTPException(status_code=400, detail="Invalid score ID")
 
 
-async def process_score(score_id: str):
+async def process_score(score_id: str, ocr: bool = False):
     """Background task: runs OMR then MuseScore export. Opens its own DB session."""
     with Session(_get_engine()) as db:
         score = db.get(Score, score_id)
@@ -62,7 +62,7 @@ async def process_score(score_id: str):
 
             # Step 2 – Audiveris OMR
             _set_status("transcribing")
-            musicxml_path = await run_omr(inputs, output_dir)
+            musicxml_path = await run_omr(inputs, output_dir, ocr=ocr)
 
             # Step 3 – MuseScore typesetting & export
             _set_status("typesetting")
@@ -97,6 +97,7 @@ async def process_score(score_id: str):
 async def upload_score(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
+    ocr: bool = Form(False),
 ):
     suffix = Path(file.filename).suffix.lower()
     if suffix not in ALLOWED_EXTENSIONS:
@@ -120,7 +121,7 @@ async def upload_score(
         content = await file.read()
         dest.write_bytes(content)
 
-        background_tasks.add_task(process_score, score.id)
+        background_tasks.add_task(process_score, score.id, ocr)
 
         return ScoreRead.model_validate(score)
 

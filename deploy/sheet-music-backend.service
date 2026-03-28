@@ -1,0 +1,18 @@
+[Unit]
+Description=Sheet Music Web Backend
+After=sheet-music-xvfb.service
+Requires=sheet-music-xvfb.service
+
+[Service]
+WorkingDirectory=/opt/sheet-music-web/backend
+Environment=HOME=/root
+EnvironmentFile=/opt/sheet-music-web/backend/.env
+ExecStart=/opt/sheet-music-web/venv/bin/uvicorn \
+    app.main:app --host 127.0.0.1 --port 8000
+Restart=always
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

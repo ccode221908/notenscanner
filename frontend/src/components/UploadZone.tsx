@@ -10,6 +10,7 @@ export default function UploadZone({ onUploaded }: UploadZoneProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [ocrEnabled, setOcrEnabled] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const handleFile = useCallback(
@@ -17,7 +18,7 @@ export default function UploadZone({ onUploaded }: UploadZoneProps) {
       setError(null);
       setIsUploading(true);
       try {
-        const score = await uploadScore(file);
+        const score = await uploadScore(file, ocrEnabled);
         onUploaded(score);
       } catch (err: unknown) {
         const message =
@@ -27,7 +28,7 @@ export default function UploadZone({ onUploaded }: UploadZoneProps) {
         setIsUploading(false);
       }
     },
-    [onUploaded]
+    [onUploaded, ocrEnabled]
   );
 
   const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
@@ -113,6 +114,28 @@ export default function UploadZone({ onUploaded }: UploadZoneProps) {
           Accepted: PNG, JPG, JPEG, TIFF, PDF
         </p>
       </div>
+      <label
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          marginTop: '12px',
+          cursor: isUploading ? 'not-allowed' : 'pointer',
+          userSelect: 'none',
+          fontSize: '14px',
+          color: '#444',
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <input
+          type="checkbox"
+          checked={ocrEnabled}
+          disabled={isUploading}
+          onChange={(e) => setOcrEnabled(e.target.checked)}
+          style={{ width: '16px', height: '16px', cursor: isUploading ? 'not-allowed' : 'pointer' }}
+        />
+        Liedtexte erkennen (OCR)
+      </label>
       {error && (
         <div
           style={{

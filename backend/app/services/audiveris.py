@@ -2,9 +2,11 @@
 import asyncio
 import logging
 import os
+import shutil
 import subprocess
 import zipfile
 from pathlib import Path
+from xml.etree import ElementTree as ET
 
 logger = logging.getLogger(__name__)
 
@@ -128,18 +130,25 @@ async def prepare_input(input_file: Path, work_dir: Path) -> list[Path]:
     return pages
 
 
-async def run_omr(inputs: list[Path], output_dir: Path) -> Path:
-    """
-    Run Audiveris OMR on the given input files (already prepared).
-    Returns path to the generated MusicXML file.
-    Raises RuntimeError if OMR fails.
-    """
+OCR_CONSTANT = "org.audiveris.omr.text.tesseract.TesseractOCR.Constants.useOCR=true"
 
+
+async def _run_audiveris_once(inputs: list[Path], output_dir: Path, ocr: bool = False) -> bool:
+    """
+    Run one Audiveris subprocess call.  Returns True on rc=0.
+    Raises asyncio.TimeoutError if the process exceeds TIMEOUT_SECONDS.
+    Logs (but does not raise) on non-zero exit so that the caller can
+    still collect any partial output Audiveris managed to write.
+    """
     cmd = [
         AUDIVERIS_BIN,
         "-batch",
         "-export",
         "-output", str(output_dir),
+    ]
+    if ocr:
+        cmd += ["-constant", OCR_CONSTANT]
+    cmd += [
         "--",
         *[str(p) for p in inputs],
     ]
@@ -162,25 +171,138 @@ async def run_omr(inputs: list[Path], output_dir: Path) -> Path:
             f"Audiveris timed out after {TIMEOUT_SECONDS}s"
         )
 
-    stdout_text = stdout.decode(errors="replace")
     stderr_text = stderr.decode(errors="replace")
-    logger.debug("Audiveris stdout: %s", stdout_text)
+    logger.debug("Audiveris stdout: %s", stdout.decode(errors="replace"))
     logger.debug("Audiveris stderr: %s", stderr_text)
 
-    # Audiveris may produce .xml or .mxl (compressed MusicXML)
-    xml_files = list(output_dir.glob("*.xml"))
-    mxl_files = list(output_dir.glob("*.mxl"))
-
-    if proc.returncode != 0 or (not xml_files and not mxl_files):
-        raise RuntimeError(
-            f"Audiveris failed (rc={proc.returncode}): {stderr_text[:1000]}"
+    if proc.returncode != 0:
+        logger.warning(
+            "Audiveris exited rc=%d for %s: %s",
+            proc.returncode, [p.name for p in inputs], stderr_text[:500],
         )
+        return False
+    return True
 
-    if xml_files:
-        logger.info("Audiveris produced XML: %s", xml_files[0])
-        return xml_files[0]
 
-    # Extract the first .mxl to .xml
-    mxl_files.sort()
-    logger.info("Audiveris produced MXL: %s — extracting", mxl_files[0])
-    return _extract_mxl(mxl_files[0])
+def _collect_omr_result(stem: str, output_dir: Path) -> Path | None:
+    """Return the XML path produced for *stem*, or None if nothing was written."""
+    xml_path = output_dir / f"{stem}.xml"
+    mxl_path = output_dir / f"{stem}.mxl"
+    if xml_path.exists():
+        return xml_path
+    if mxl_path.exists():
+        return _extract_mxl(mxl_path)
+    return None
+
+
+def _merge_musicxml_files(xml_paths: list[Path], output_path: Path) -> None:
+    """Merge consecutive-page MusicXML files into one score.
+
+    Parts are matched by list index.  Measures from pages 2..N are appended
+    to the corresponding parts from page 1 and renumbered sequentially.
+    """
+    if len(xml_paths) == 1:
+        shutil.copy2(str(xml_paths[0]), str(output_path))
+        return
+
+    parsed: list[tuple[ET.ElementTree, ET.Element]] = []
+    for path in xml_paths:
+        try:
+            tree = ET.parse(str(path))
+            parsed.append((tree, tree.getroot()))
+        except Exception as exc:
+            logger.warning("Skipping %s during merge (parse error): %s", path, exc)
+
+    if not parsed:
+        raise RuntimeError("No valid MusicXML files to merge")
+    if len(parsed) == 1:
+        shutil.copy2(str(xml_paths[0]), str(output_path))
+        return
+
+    def _ns(el: ET.Element) -> str:
+        tag = el.tag
+        return tag[:tag.index("}") + 1] if "{" in tag else ""
+
+    base_tree, base_root = parsed[0]
+    base_ns = _ns(base_root)
+
+    for _, src_root in parsed[1:]:
+        src_ns = _ns(src_root)
+        base_parts = base_root.findall(f"{base_ns}part")
+        src_parts = src_root.findall(f"{src_ns}part")
+
+        for i, base_part in enumerate(base_parts):
+            if i >= len(src_parts):
+                continue
+            src_part = src_parts[i]
+
+            offset = len(base_part.findall(f"{base_ns}measure"))
+            for j, measure in enumerate(src_part.findall(f"{src_ns}measure")):
+                measure.set("number", str(offset + j + 1))
+                base_part.append(measure)
+
+    base_tree.write(str(output_path), xml_declaration=True, encoding="unicode")
+    logger.info("Merged %d MusicXML pages → %s", len(parsed), output_path)
+
+
+async def run_omr(inputs: list[Path], output_dir: Path, ocr: bool = False) -> Path:
+    """
+    Run Audiveris OMR on the given input files (already prepared).
+    Returns path to the generated MusicXML file.
+
+    For single inputs the original single-call behaviour is used.
+    For multiple inputs (multi-page PDFs rasterised to per-page PNGs) each
+    page is processed individually so that one slow or failing page does not
+    abort the whole job, and the results are merged into one MusicXML file.
+    """
+    if len(inputs) == 0:
+        raise RuntimeError("run_omr called with no inputs")
+
+    if len(inputs) == 1:
+        # ── original single-call path ──────────────────────────────────────
+        await _run_audiveris_once(inputs, output_dir, ocr=ocr)
+
+        xml_files = list(output_dir.glob("*.xml"))
+        mxl_files = list(output_dir.glob("*.mxl"))
+
+        if not xml_files and not mxl_files:
+            raise RuntimeError("Audiveris produced no output")
+
+        if xml_files:
+            logger.info("Audiveris produced XML: %s", xml_files[0])
+            return xml_files[0]
+
+        mxl_files.sort()
+        logger.info("Audiveris produced MXL: %s — extracting", mxl_files[0])
+        return _extract_mxl(mxl_files[0])
+
+    # ── multi-page path: one Audiveris call per page ───────────────────────
+    logger.info("Multi-page input (%d pages) — processing individually", len(inputs))
+    xml_paths: list[Path] = []
+
+    for inp in sorted(inputs):  # sorted so pages are merged in order
+        try:
+            await _run_audiveris_once([inp], output_dir, ocr=ocr)
+        except asyncio.TimeoutError:
+            logger.warning("Page %s timed out — skipping", inp.name)
+            continue
+        except Exception as exc:
+            logger.warning("Page %s error — skipping: %s", inp.name, exc)
+            continue
+
+        result = _collect_omr_result(inp.stem, output_dir)
+        if result is not None:
+            xml_paths.append(result)
+            logger.info("Page %s → %s", inp.name, result.name)
+        else:
+            logger.warning("Page %s: Audiveris produced no output", inp.name)
+
+    if not xml_paths:
+        raise RuntimeError("All pages failed OMR")
+
+    if len(xml_paths) == 1:
+        return xml_paths[0]
+
+    merged_path = output_dir / "merged.xml"
+    _merge_musicxml_files(xml_paths, merged_path)
+    return merged_path

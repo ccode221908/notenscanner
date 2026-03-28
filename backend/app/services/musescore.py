@@ -84,6 +84,17 @@ async def export_score(musicxml_file: Path, output_dir: Path) -> Dict[str, Any]:
     await _run_musescore(musicxml_file, pdf_path)
     logger.info("Exported PDF: %s", pdf_path)
 
+    # 1c. Export SVG pages for browser display (best-effort)
+    # Use the clean MuseScore-normalised XML as source for best rendering.
+    svg_source = clean_xml_path if clean_xml_path.exists() else musicxml_file
+    svg_target = output_dir / f"{stem}.svg"
+    try:
+        await _run_musescore(svg_source, svg_target)
+        svg_files = sorted(output_dir.glob(f"{stem}-*.svg"))
+        logger.info("Exported %d SVG page(s)", len(svg_files))
+    except Exception as exc:
+        logger.warning("SVG export failed (non-fatal): %s", exc)
+
     # 2. Export full MIDI
     midi_full_path = output_dir / f"{stem}.mid"
     await _run_musescore(musicxml_file, midi_full_path)
