@@ -20,7 +20,7 @@ app = FastAPI(title="Sheet Music Web", version="0.1.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000"],
+    allow_origins=["http://localhost:5173", "http://localhost:3000", "https://notes.m8u.de"],
     allow_methods=["*"],
     allow_headers=["*"],
 )

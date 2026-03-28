@@ -1,13 +1,14 @@
 """Audiveris OMR service — subprocess wrapper."""
 import asyncio
 import logging
+import os
 import subprocess
 import zipfile
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-AUDIVERIS_BIN = "/opt/audiveris/bin/Audiveris"
+AUDIVERIS_BIN = os.environ.get("AUDIVERIS_BIN", "/opt/audiveris/bin/Audiveris")
 TIMEOUT_SECONDS = 900
 
 # Audiveris hard limit: 20 million pixels per sheet.
