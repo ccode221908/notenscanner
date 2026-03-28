@@ -6,11 +6,11 @@ interface ScoreViewerProps {
   scoreId: string;
 }
 
-/** Poll until the element has a real rendered width (> 50px). */
+/** Wait until the element has a real rendered width (> 200px). */
 function waitForWidth(el: HTMLElement): Promise<void> {
   return new Promise((resolve) => {
     const check = () => {
-      if (el.offsetWidth > 50) {
+      if (el.offsetWidth > 200) {
         resolve();
       } else {
         requestAnimationFrame(check);
@@ -23,6 +23,7 @@ function waitForWidth(el: HTMLElement): Promise<void> {
 export default function ScoreViewer({ scoreId }: ScoreViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const osmdRef = useRef<OpenSheetMusicDisplay | null>(null);
+  const lastWidthRef = useRef(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -32,25 +33,41 @@ export default function ScoreViewer({ scoreId }: ScoreViewerProps) {
     let cancelled = false;
     const container = containerRef.current;
 
+    async function doRender() {
+      if (!osmdRef.current || cancelled) return;
+      try {
+        await osmdRef.current.render();
+        lastWidthRef.current = container.offsetWidth;
+      } catch {
+        // ignore re-render errors
+      }
+    }
+
+    function handleResize() {
+      const w = container.offsetWidth;
+      if (w > 200 && Math.abs(w - lastWidthRef.current) > 20) {
+        doRender();
+      }
+    }
+
     async function loadScore() {
       setLoading(true);
       setError(null);
 
       try {
         const res = await fetch(musicxmlUrl(scoreId));
-        if (!res.ok) {
-          throw new Error(`Failed to fetch MusicXML: ${res.status} ${res.statusText}`);
-        }
+        if (!res.ok) throw new Error(`MusicXML laden fehlgeschlagen: ${res.status}`);
         const xmlText = await res.text();
         if (cancelled) return;
 
-        // Wait for the container to have its real CSS width before handing it to
-        // OSMD — otherwise OSMD sees offsetWidth=0 and puts one measure per line.
+        // Wait until the container has its real CSS width before handing it to OSMD.
+        // autoResize is disabled — OSMD's own ResizeObserver fires after the SVG is
+        // inserted and measures an inflated scroll-width, causing 1-measure-per-line.
         await waitForWidth(container);
         if (cancelled) return;
 
         const osmd = new OpenSheetMusicDisplay(container, {
-          autoResize: true,
+          autoResize: false,
           drawingParameters: 'default',
           backend: 'svg',
         });
@@ -60,10 +77,19 @@ export default function ScoreViewer({ scoreId }: ScoreViewerProps) {
         if (cancelled) return;
 
         await osmd.render();
+        lastWidthRef.current = container.offsetWidth;
         if (!cancelled) setLoading(false);
+
+        // Re-render once after a short delay in case the layout still hadn't
+        // fully settled when we first measured (e.g. scrollbar appearing).
+        setTimeout(() => {
+          if (!cancelled) doRender();
+        }, 150);
+
+        window.addEventListener('resize', handleResize);
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : 'Failed to load score');
+          setError(err instanceof Error ? err.message : 'Partitur konnte nicht angezeigt werden');
           setLoading(false);
         }
       }
@@ -73,6 +99,7 @@ export default function ScoreViewer({ scoreId }: ScoreViewerProps) {
 
     return () => {
       cancelled = true;
+      window.removeEventListener('resize', handleResize);
       if (osmdRef.current) {
         osmdRef.current.clear();
         osmdRef.current = null;
