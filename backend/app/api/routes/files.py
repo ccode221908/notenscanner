@@ -1,8 +1,9 @@
 import asyncio
 import logging
 import re
+import xml.etree.ElementTree as ET
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from sqlmodel import Session, select
 
 from app.models import Score, Part
@@ -41,6 +42,24 @@ def _require_ready_score(db: Session, score_id: str) -> Score:
     if score.status != "ready":
         raise HTTPException(status_code=409, detail="Score is not ready yet")
     return score
+
+
+def _strip_forced_breaks(xml_bytes: bytes) -> bytes:
+    """Remove new-system/new-page forced breaks so OSMD reflows to browser width."""
+    try:
+        root = ET.fromstring(xml_bytes)
+        changed = False
+        for el in root.iter('print'):
+            for attr in ('new-system', 'new-page'):
+                if el.get(attr) is not None:
+                    del el.attrib[attr]
+                    changed = True
+        if not changed:
+            return xml_bytes
+        return ET.tostring(root, encoding='unicode').encode('utf-8')
+    except Exception as exc:
+        logger.warning("Could not strip forced breaks: %s", exc)
+        return xml_bytes
 
 
 def _find_musicxml(score_id: str):
@@ -105,11 +124,8 @@ async def get_musicxml(score_id: str):
             clean_path = xml_path
 
     serve_path = clean_path if clean_path.exists() else xml_path
-    return FileResponse(
-        path=str(serve_path),
-        media_type="application/xml",
-        filename=serve_path.name,
-    )
+    content = _strip_forced_breaks(serve_path.read_bytes())
+    return Response(content=content, media_type="application/xml")
 
 
 @router.get("/{score_id}/pdf")
