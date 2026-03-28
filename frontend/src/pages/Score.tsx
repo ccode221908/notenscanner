@@ -7,7 +7,80 @@ import PartPlayer from '../components/PartPlayer';
 import ExportPanel from '../components/ExportPanel';
 
 const TERMINAL_STATUSES = ['ready', 'failed'];
-const PROCESSING_STATUSES = ['pending', 'processing', 'omr_done'];
+const PROCESSING_STATUSES = ['pending', 'preparing', 'transcribing', 'typesetting', 'processing', 'omr_done'];
+
+interface Step { label: string; hint: string; }
+const STEPS: Step[] = [
+  { label: 'Eingabe vorbereiten', hint: 'Datei prüfen und ggf. skalieren' },
+  { label: 'Notenerkennung (OMR)', hint: 'Audiveris analysiert das Bild — kann mehrere Minuten dauern' },
+  { label: 'Notensatz', hint: 'MuseScore erstellt PDF und MIDI' },
+];
+
+function statusToStep(status: string): number {
+  switch (status) {
+    case 'pending':      return 0;
+    case 'preparing':
+    case 'processing':   return 1;  // legacy
+    case 'transcribing': return 2;
+    case 'omr_done':
+    case 'typesetting':  return 3;
+    default:             return 0;
+  }
+}
+
+function ProcessingStepper({ status }: { status: string }) {
+  const activeStep = statusToStep(status);  // 1-indexed: which step is running
+  return (
+    <div style={{ margin: '16px 0 24px', padding: '16px', background: '#f8f9fa', borderRadius: '8px', border: '1px solid #e0e0e0' }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0' }}>
+        {STEPS.map((step, i) => {
+          const stepNum = i + 1;
+          const isDone = activeStep > stepNum;
+          const isActive = activeStep === stepNum;
+          const isPending = activeStep < stepNum;
+          return (
+            <div key={i} style={{ display: 'flex', alignItems: 'flex-start', flex: 1 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: '32px' }}>
+                <div style={{
+                  width: '28px', height: '28px', borderRadius: '50%', display: 'flex',
+                  alignItems: 'center', justifyContent: 'center', fontSize: '13px', fontWeight: 700,
+                  background: isDone ? '#28a745' : isActive ? '#1a73e8' : '#e0e0e0',
+                  color: isDone || isActive ? '#fff' : '#888',
+                  flexShrink: 0,
+                  boxShadow: isActive ? '0 0 0 3px rgba(26,115,232,0.2)' : 'none',
+                }}>
+                  {isDone ? '✓' : stepNum}
+                </div>
+              </div>
+              <div style={{ paddingLeft: '10px', paddingRight: '8px', flex: 1 }}>
+                <div style={{ fontSize: '13px', fontWeight: isActive ? 700 : 500, color: isPending ? '#aaa' : '#333' }}>
+                  {isActive && (
+                    <span style={{
+                      display: 'inline-block', width: '10px', height: '10px', marginRight: '6px',
+                      border: '2px solid #aaa', borderTopColor: '#1a73e8', borderRadius: '50%',
+                      animation: 'spin 0.8s linear infinite', verticalAlign: 'middle',
+                    }} />
+                  )}
+                  {step.label}
+                </div>
+                {isActive && (
+                  <div style={{ fontSize: '11px', color: '#666', marginTop: '2px' }}>{step.hint}</div>
+                )}
+              </div>
+              {i < STEPS.length - 1 && (
+                <div style={{
+                  height: '2px', flex: 0, width: '16px', marginTop: '13px',
+                  background: isDone ? '#28a745' : '#e0e0e0', flexShrink: 0,
+                }} />
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+    </div>
+  );
+}
 
 export default function Score() {
   const { id } = useParams<{ id: string }>();
@@ -133,17 +206,7 @@ export default function Score() {
         )}
       </div>
 
-      {isProcessing && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', color: '#555' }}>
-          <span style={{
-            display: 'inline-block', width: '16px', height: '16px',
-            border: '2px solid #aaa', borderTopColor: '#333', borderRadius: '50%',
-            animation: 'spin 0.8s linear infinite',
-          }} />
-          Verarbeitung läuft... ({status})
-          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-        </div>
-      )}
+      {isProcessing && <ProcessingStepper status={status} />}
 
       {isFailed && (
         <div style={{ marginBottom: '16px', padding: '12px', background: '#ffe0e0', color: '#c00', borderRadius: '4px' }}>

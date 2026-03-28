@@ -9,6 +9,22 @@ interface ScoreListProps {
   onDeleted: (id: string) => void;
 }
 
+const STATUS_LABELS: Record<string, string> = {
+  pending:      'Wartend',
+  preparing:    'Vorbereitung…',
+  transcribing: 'Notenerkennung…',
+  typesetting:  'Notensatz…',
+  processing:   'Verarbeitung…',   // legacy
+  omr_done:     'Notensatz…',      // legacy
+  ready:        'Fertig',
+  failed:       'Fehlgeschlagen',
+  omr_failed:   'Fehlgeschlagen',
+};
+
+function statusLabel(status: string): string {
+  return STATUS_LABELS[status] ?? status;
+}
+
 function statusColor(status: string): string {
   switch (status) {
     case 'ready': return '#28a745';
@@ -139,7 +155,7 @@ function ScoreRow({ score, onRenamed, onDeleted }: ScoreRowProps) {
             cursor: score.error_message ? 'help' : 'default',
           }}
         >
-          {score.status}
+          {statusLabel(score.status)}
         </span>
       </td>
 

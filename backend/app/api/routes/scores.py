@@ -9,7 +9,7 @@ import re
 
 from app.models import Score, Part, ScoreRead, ScoreRename, PartRead, ScoreDetail
 from app.services.storage import score_upload_dir, score_output_dir
-from app.services.audiveris import run_omr
+from app.services.audiveris import prepare_input, run_omr
 from app.services.musescore import export_score
 
 router = APIRouter(prefix="/scores", tags=["scores"])
@@ -18,7 +18,8 @@ logger = logging.getLogger(__name__)
 ALLOWED_EXTENSIONS = {".png", ".jpg", ".jpeg", ".tiff", ".tif", ".pdf"}
 _UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.IGNORECASE)
 
-IN_PROGRESS_STATUSES = {"pending", "processing", "omr_done"}
+IN_PROGRESS_STATUSES = {"pending", "preparing", "transcribing", "typesetting",
+                        "processing", "omr_done"}  # legacy names kept for existing rows
 
 
 def _get_engine():
@@ -38,13 +39,13 @@ async def process_score(score_id: str):
         if not score:
             return
 
-        try:
-            score.status = "processing"
+        def _set_status(s: str):
+            score.status = s
             score.updated_at = datetime.now(timezone.utc)
             db.add(score)
             db.commit()
-            db.refresh(score)
 
+        try:
             upload_dir = score_upload_dir(score_id)
             input_files = list(upload_dir.glob("input.*"))
             if not input_files:
@@ -52,14 +53,19 @@ async def process_score(score_id: str):
             input_file = input_files[0]
 
             output_dir = score_output_dir(score_id)
+            work_dir = output_dir / "work"
+            work_dir.mkdir(parents=True, exist_ok=True)
 
-            musicxml_path = await run_omr(input_file, output_dir)
+            # Step 1 – prepare input (rasterise oversized PDFs if needed)
+            _set_status("preparing")
+            inputs = await prepare_input(input_file, work_dir)
 
-            score.status = "omr_done"
-            score.updated_at = datetime.now(timezone.utc)
-            db.add(score)
-            db.commit()
+            # Step 2 – Audiveris OMR
+            _set_status("transcribing")
+            musicxml_path = await run_omr(inputs, output_dir)
 
+            # Step 3 – MuseScore typesetting & export
+            _set_status("typesetting")
             result = await export_score(musicxml_path, output_dir)
 
             for part in result["parts"]:

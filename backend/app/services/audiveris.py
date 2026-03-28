@@ -91,10 +91,11 @@ def _render_pdf_to_pngs(pdf_path: Path, output_dir: Path, dpi: int) -> list[Path
     return pages
 
 
-async def _prepare_input(input_file: Path, work_dir: Path) -> list[Path]:
+async def prepare_input(input_file: Path, work_dir: Path) -> list[Path]:
     """
     Return the list of files to feed to Audiveris.
     For PDFs whose first page exceeds Audiveris's pixel limit, rasterise first.
+    Returns the same input_file in a list if no pre-processing is needed.
     """
     suffix = input_file.suffix.lower()
     if suffix != ".pdf":
@@ -102,22 +103,15 @@ async def _prepare_input(input_file: Path, work_dir: Path) -> list[Path]:
 
     size = _get_pdf_page_size_pts(input_file)
     if size is None:
-        # Can't determine size — let Audiveris try directly
         return [input_file]
 
     w_pt, h_pt = size
     dpi = _safe_dpi_for_page(w_pt, h_pt)
 
-    # Check if the default Audiveris DPI (72? or the PDF resolution) would exceed limit
-    # A4 at 72pt = 595×842 → 595×842 px → 500k pixels, fine.
-    # But if the PDF embeds 600 DPI raster images the real size is much bigger.
-    # We always rasterise when the page is larger than A3 at 300 DPI or when
-    # gs reports dimensions that would exceed the limit at 300 DPI.
     w_in = w_pt / 72.0
     h_in = h_pt / 72.0
     pixels_at_300 = (w_in * 300) * (h_in * 300)
     if pixels_at_300 <= AUDIVERIS_MAX_PIXELS:
-        # Page is small enough even at 300 DPI — let Audiveris load the PDF directly
         return [input_file]
 
     logger.info(
@@ -133,16 +127,12 @@ async def _prepare_input(input_file: Path, work_dir: Path) -> list[Path]:
     return pages
 
 
-async def run_omr(input_file: Path, output_dir: Path) -> Path:
+async def run_omr(inputs: list[Path], output_dir: Path) -> Path:
     """
-    Run Audiveris OMR on input_file.
+    Run Audiveris OMR on the given input files (already prepared).
     Returns path to the generated MusicXML file.
     Raises RuntimeError if OMR fails.
     """
-    work_dir = output_dir / "work"
-    work_dir.mkdir(parents=True, exist_ok=True)
-
-    inputs = await _prepare_input(input_file, work_dir)
 
     cmd = [
         AUDIVERIS_BIN,
@@ -168,7 +158,7 @@ async def run_omr(input_file: Path, output_dir: Path) -> Path:
         proc.kill()
         await proc.communicate()
         raise asyncio.TimeoutError(
-            f"Audiveris timed out after {TIMEOUT_SECONDS}s on {input_file}"
+            f"Audiveris timed out after {TIMEOUT_SECONDS}s"
         )
 
     stdout_text = stdout.decode(errors="replace")
