@@ -42,12 +42,17 @@ apt-get install -y --no-install-recommends \
     python3.12 \
     python3.12-venv \
     python3-pip \
-    nodejs \
-    npm \
     curl \
     unzip \
     tesseract-ocr-eng \
     tesseract-ocr-deu
+
+# Node.js 20 LTS via NodeSource (Ubuntu-Repo liefert nur 18, zu alt fuer Vite)
+if ! node --version 2>/dev/null | grep -qE '^v(20|22|23|24)'; then
+    info "Installiere Node.js 20 LTS (NodeSource)..."
+    curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+    apt-get install -y nodejs
+fi
 
 # nginx + certbot nur installieren wenn eine Domain angegeben wird
 if [[ -n "${1:-}" ]]; then
