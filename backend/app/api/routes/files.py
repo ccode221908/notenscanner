@@ -82,15 +82,33 @@ async def score_status_sse(score_id: str):
 
 
 @router.get("/{score_id}/musicxml")
-def get_musicxml(score_id: str):
+async def get_musicxml(score_id: str):
+    """Serve a MuseScore-normalised MusicXML for OSMD rendering.
+
+    Audiveris XML can contain structures that crash OSMD internally.
+    Running it through MuseScore first produces clean, standard XML.
+    The result is cached next to the source file as {stem}.ms.musicxml.
+    Falls back to the raw Audiveris XML if MuseScore conversion fails.
+    """
     _validate_score_id(score_id)
     with Session(_get_engine()) as db:
         _require_ready_score(db, score_id)
+
     xml_path = _find_musicxml(score_id)
+    clean_path = xml_path.with_suffix(".ms.musicxml")
+
+    if not clean_path.exists():
+        try:
+            await _run_musescore(xml_path, clean_path)
+        except Exception as exc:
+            logger.warning("MuseScore normalisation failed, falling back to raw XML: %s", exc)
+            clean_path = xml_path
+
+    serve_path = clean_path if clean_path.exists() else xml_path
     return FileResponse(
-        path=str(xml_path),
+        path=str(serve_path),
         media_type="application/xml",
-        filename=xml_path.name,
+        filename=serve_path.name,
     )
 
 
