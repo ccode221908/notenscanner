@@ -3,6 +3,16 @@ import type { ScoreRead, ScoreDetail } from './types';
 
 const api = axios.create({ baseURL: '' });
 
+// Attach JWT token to every request if available
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem('auth_token');
+  if (token) {
+    config.headers = config.headers ?? {};
+    config.headers['Authorization'] = `Bearer ${token}`;
+  }
+  return config;
+});
+
 export async function uploadScore(file: File, ocr: boolean = false): Promise<ScoreRead> {
   const formData = new FormData();
   formData.append('file', file);
@@ -33,7 +43,9 @@ export async function deleteScore(id: string): Promise<void> {
 }
 
 export function scoreStatusUrl(id: string): string {
-  return `/api/scores/${id}/status`;
+  const token = localStorage.getItem('auth_token');
+  const base = `/api/scores/${id}/status`;
+  return token ? `${base}?token=${encodeURIComponent(token)}` : base;
 }
 
 export function musicxmlUrl(id: string): string {
@@ -62,6 +74,60 @@ export function svgInfoUrl(id: string): string {
 
 export function svgPageUrl(id: string, page: number): string {
   return `/api/scores/${id}/svg/${page}`;
+}
+
+export function originalUrl(id: string): string {
+  return `/api/scores/${id}/original`;
+}
+
+// --- Auth API ---
+
+export async function createChallenge(): Promise<{
+  challengeId: string;
+  qrDataUrl: string;
+  loginUri: string;
+  mobileUri: string;
+}> {
+  const response = await axios.post('/auth/challenge');
+  return response.data;
+}
+
+export async function pollChallenge(challengeId: string): Promise<{
+  status: string;
+  token?: string;
+  coreId?: string;
+}> {
+  const response = await axios.get(`/auth/challenge/${challengeId}`);
+  return response.data;
+}
+
+export async function getSession(): Promise<{ authenticated: boolean; coreId?: string }> {
+  try {
+    const token = localStorage.getItem('auth_token');
+    if (!token) return { authenticated: false };
+    const response = await axios.get('/auth/session', {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    return response.data;
+  } catch {
+    return { authenticated: false };
+  }
+}
+
+export async function logout(): Promise<void> {
+  localStorage.removeItem('auth_token');
+  localStorage.removeItem('auth_core_id');
+  await axios.post('/auth/logout').catch(() => {});
+}
+
+export async function getProfile(): Promise<{ user_name: string }> {
+  const response = await api.get<{ user_name: string }>('/auth/profile');
+  return response.data;
+}
+
+export async function updateProfile(userName: string): Promise<{ user_name: string }> {
+  const response = await api.put<{ user_name: string }>('/auth/profile', { user_name: userName });
+  return response.data;
 }
 
 export default api;

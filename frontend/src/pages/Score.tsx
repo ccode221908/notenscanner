@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import type { ScoreDetail } from '../types';
 import { getScore, renameScore, scoreStatusUrl } from '../api';
 import ScoreViewer from '../components/ScoreViewer';
+import OriginalViewer from '../components/OriginalViewer';
 import PartPlayer from '../components/PartPlayer';
 import ExportPanel from '../components/ExportPanel';
 
@@ -28,11 +29,18 @@ function statusToStep(status: string): number {
   }
 }
 
+const STEP_ICONS = ['🔧', '🔍', '🎵'];
+
 function ProcessingStepper({ status }: { status: string }) {
-  const activeStep = statusToStep(status);  // 1-indexed: which step is running
+  const activeStep = statusToStep(status);
   return (
-    <div style={{ margin: '16px 0 24px', padding: '16px', background: '#f8f9fa', borderRadius: '8px', border: '1px solid #e0e0e0' }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0' }}>
+    <div style={{
+      margin: '16px 0 24px', padding: '20px 24px',
+      background: '#fff', borderRadius: '14px',
+      boxShadow: '0 2px 12px rgba(0,0,0,0.07)',
+      border: '1px solid #f3f4f6',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start' }}>
         {STEPS.map((step, i) => {
           const stepNum = i + 1;
           const isDone = activeStep > stepNum;
@@ -40,37 +48,48 @@ function ProcessingStepper({ status }: { status: string }) {
           const isPending = activeStep < stepNum;
           return (
             <div key={i} style={{ display: 'flex', alignItems: 'flex-start', flex: 1 }}>
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: '32px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
                 <div style={{
-                  width: '28px', height: '28px', borderRadius: '50%', display: 'flex',
-                  alignItems: 'center', justifyContent: 'center', fontSize: '13px', fontWeight: 700,
-                  background: isDone ? '#28a745' : isActive ? '#1a73e8' : '#e0e0e0',
-                  color: isDone || isActive ? '#fff' : '#888',
+                  width: '36px', height: '36px', borderRadius: '50%', display: 'flex',
+                  alignItems: 'center', justifyContent: 'center', fontSize: '16px',
+                  background: isDone
+                    ? 'linear-gradient(135deg, #16a34a, #15803d)'
+                    : isActive
+                    ? 'linear-gradient(135deg, #1a73e8, #7c3aed)'
+                    : '#f3f4f6',
+                  color: isDone || isActive ? '#fff' : '#9ca3af',
                   flexShrink: 0,
-                  boxShadow: isActive ? '0 0 0 3px rgba(26,115,232,0.2)' : 'none',
+                  boxShadow: isActive ? '0 0 0 4px rgba(124,58,237,0.15)' : 'none',
+                  transition: 'all 0.3s',
                 }}>
-                  {isDone ? '✓' : stepNum}
+                  {isDone ? '✓' : STEP_ICONS[i]}
                 </div>
+                {isActive && (
+                  <div style={{
+                    width: '20px', height: '20px', borderRadius: '50%', marginTop: '6px',
+                    border: '2px solid #e5e7eb', borderTopColor: '#7c3aed',
+                    animation: 'spin 0.7s linear infinite',
+                  }} />
+                )}
               </div>
-              <div style={{ paddingLeft: '10px', paddingRight: '8px', flex: 1 }}>
-                <div style={{ fontSize: '13px', fontWeight: isActive ? 700 : 500, color: isPending ? '#aaa' : '#333' }}>
-                  {isActive && (
-                    <span style={{
-                      display: 'inline-block', width: '10px', height: '10px', marginRight: '6px',
-                      border: '2px solid #aaa', borderTopColor: '#1a73e8', borderRadius: '50%',
-                      animation: 'spin 0.8s linear infinite', verticalAlign: 'middle',
-                    }} />
-                  )}
+              <div style={{ paddingLeft: '10px', paddingRight: '8px', flex: 1, paddingTop: '6px' }}>
+                <div style={{
+                  fontSize: '13px', fontWeight: isActive ? 700 : 500,
+                  color: isPending ? '#9ca3af' : '#111827',
+                }}>
                   {step.label}
                 </div>
                 {isActive && (
-                  <div style={{ fontSize: '11px', color: '#666', marginTop: '2px' }}>{step.hint}</div>
+                  <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '2px' }}>{step.hint}</div>
                 )}
               </div>
               {i < STEPS.length - 1 && (
                 <div style={{
-                  height: '2px', flex: 0, width: '16px', marginTop: '13px',
-                  background: isDone ? '#28a745' : '#e0e0e0', flexShrink: 0,
+                  height: '2px', width: '20px', marginTop: '17px', flexShrink: 0,
+                  background: isDone
+                    ? 'linear-gradient(90deg, #16a34a, #1a73e8)'
+                    : '#e5e7eb',
+                  borderRadius: '1px',
                 }} />
               )}
             </div>
@@ -82,12 +101,36 @@ function ProcessingStepper({ status }: { status: string }) {
   );
 }
 
+function ZoomSlider({ zoom, onChange }: { zoom: number; onChange: (v: number) => void }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+      <input
+        type="range"
+        min={50}
+        max={200}
+        step={10}
+        value={Math.round(zoom * 100)}
+        onChange={e => onChange(Number(e.target.value) / 100)}
+        style={{ width: '100px', cursor: 'pointer', accentColor: '#7c3aed' }}
+      />
+      <span style={{ fontSize: '12px', color: '#6b7280', minWidth: '38px' }}>
+        {Math.round(zoom * 100)}%
+      </span>
+    </div>
+  );
+}
+
 export default function Score() {
   const { id } = useParams<{ id: string }>();
   const [score, setScore] = useState<ScoreDetail | null>(null);
   const [status, setStatus] = useState<string>('pending');
   const [loadError, setLoadError] = useState<string | null>(null);
   const isTerminalRef = useRef(false);
+
+  // Zoom + split state
+  const [splitView, setSplitView] = useState(false);
+  const [scoreZoom, setScoreZoom] = useState(1);
+  const [originalZoom, setOriginalZoom] = useState(1);
 
   // Rename state
   const [renaming, setRenaming] = useState(false);
@@ -176,8 +219,12 @@ export default function Score() {
   };
 
   return (
-    <div style={{ padding: '24px', maxWidth: '960px', margin: '0 auto' }}>
-      <Link to="/">← Zurück</Link>
+    <div style={{ minHeight: '100vh', background: '#f7f8fc', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+    <div style={{ padding: '28px 24px', maxWidth: '960px', margin: '0 auto' }}>
+      <Link to="/" style={{
+        display: 'inline-flex', alignItems: 'center', gap: '6px',
+        color: '#7c3aed', textDecoration: 'none', fontSize: '14px', fontWeight: 500,
+      }}>← Übersicht</Link>
 
       {/* Title with inline rename */}
       <div style={{ display: 'flex', alignItems: 'center', marginTop: '16px', marginBottom: '8px', gap: '8px' }}>
@@ -209,19 +256,77 @@ export default function Score() {
       {isProcessing && <ProcessingStepper status={status} />}
 
       {isFailed && (
-        <div style={{ marginBottom: '16px', padding: '12px', background: '#ffe0e0', color: '#c00', borderRadius: '4px' }}>
-          <strong>Verarbeitung fehlgeschlagen.</strong>
-          {score.error_message && <p style={{ marginTop: '4px' }}>{score.error_message}</p>}
+        <div style={{
+          marginBottom: '20px', padding: '16px 20px',
+          background: '#fef2f2', border: '1px solid #fecaca',
+          borderRadius: '12px', color: '#dc2626',
+          display: 'flex', gap: '12px', alignItems: 'flex-start',
+        }}>
+          <span style={{ fontSize: '20px', flexShrink: 0 }}>⚠️</span>
+          <div>
+            <div style={{ fontWeight: 700, marginBottom: '2px' }}>Verarbeitung fehlgeschlagen</div>
+            {score.error_message && (
+              <div style={{ fontSize: '13px', color: '#ef4444', marginTop: '4px' }}>{score.error_message}</div>
+            )}
+          </div>
         </div>
       )}
 
       {isReady && (
         <>
-          <ScoreViewer scoreId={score.id} />
+          {/* Toolbar: split toggle */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px', flexWrap: 'wrap' }}>
+            <button
+              onClick={() => setSplitView(v => !v)}
+              style={{
+                background: splitView ? 'linear-gradient(135deg, #1a73e8, #7c3aed)' : '#fff',
+                color: splitView ? '#fff' : '#374151',
+                border: '1px solid #e5e7eb',
+                borderRadius: '8px',
+                padding: '6px 14px',
+                cursor: 'pointer',
+                fontSize: '13px',
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+              }}
+            >
+              {splitView ? '▣ Einzelansicht' : '⧉ Vergleichsansicht'}
+            </button>
+            {!splitView && (
+              <ZoomSlider zoom={scoreZoom} onChange={setScoreZoom} />
+            )}
+          </div>
+
+          {splitView ? (
+            <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
+              <div style={{ flex: 1, minWidth: '280px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                  <span style={{ fontSize: '13px', fontWeight: 600, color: '#374151' }}>Original</span>
+                  {(score.filename.split('.').pop()?.toLowerCase() !== 'pdf') && (
+                    <ZoomSlider zoom={originalZoom} onChange={setOriginalZoom} />
+                  )}
+                </div>
+                <OriginalViewer scoreId={score.id} filename={score.filename} zoom={originalZoom} />
+              </div>
+              <div style={{ flex: 1, minWidth: '280px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                  <span style={{ fontSize: '13px', fontWeight: 600, color: '#374151' }}>Partitur</span>
+                  <ZoomSlider zoom={scoreZoom} onChange={setScoreZoom} />
+                </div>
+                <ScoreViewer scoreId={score.id} zoom={scoreZoom} />
+              </div>
+            </div>
+          ) : (
+            <ScoreViewer scoreId={score.id} zoom={scoreZoom} />
+          )}
+
           <PartPlayer scoreId={score.id} parts={score.parts} />
           <ExportPanel scoreId={score.id} />
         </>
       )}
+    </div>
     </div>
   );
 }

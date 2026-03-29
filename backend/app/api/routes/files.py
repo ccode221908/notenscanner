@@ -43,6 +43,16 @@ def _require_ready_score(db: Session, score_id: str) -> Score:
     return score
 
 
+def _download_name(score: Score, ext: str, suffix: str = "") -> str:
+    """Return a sanitised download filename like 'Sinfonie Nr.5.pdf'."""
+    from pathlib import Path
+    base = score.display_name or score.original_filename
+    stem = Path(base).stem  # strip any existing extension
+    name = f"{stem}{suffix}.{ext}"
+    # Replace characters that are problematic in filenames
+    return re.sub(r'[\\/*?:"<>|]', "_", name)
+
+
 def _strip_forced_breaks(xml_bytes: bytes) -> bytes:
     """Remove forced layout hints so OSMD reflows freely to browser width.
 
@@ -145,30 +155,33 @@ async def get_musicxml(score_id: str):
 def get_pdf(score_id: str):
     _validate_score_id(score_id)
     with Session(_get_engine()) as db:
-        _require_ready_score(db, score_id)
+        score = _require_ready_score(db, score_id)
+        filename = _download_name(score, "pdf")
     output_dir = score_output_dir(score_id)
     pdf_files = [f for f in output_dir.glob("*.pdf") if f.parent == output_dir]
     if not pdf_files:
         raise HTTPException(status_code=404, detail="PDF file not found")
-    return FileResponse(path=str(pdf_files[0]), filename=pdf_files[0].name)
+    return FileResponse(path=str(pdf_files[0]), filename=filename)
 
 
 @router.get("/{score_id}/midi")
 def get_midi(score_id: str):
     _validate_score_id(score_id)
     with Session(_get_engine()) as db:
-        _require_ready_score(db, score_id)
+        score = _require_ready_score(db, score_id)
+        filename = _download_name(score, "mid")
     output_dir = score_output_dir(score_id)
     midi_files = [f for f in output_dir.glob("*.mid") if f.parent == output_dir]
     if not midi_files:
         raise HTTPException(status_code=404, detail="MIDI file not found")
-    return FileResponse(path=str(midi_files[0]), media_type="audio/midi", filename=midi_files[0].name)
+    return FileResponse(path=str(midi_files[0]), media_type="audio/midi", filename=filename)
 
 
 @router.get("/{score_id}/parts/{part_name}/midi")
 def get_part_midi(score_id: str, part_name: str):
     _validate_score_id(score_id)
     with Session(_get_engine()) as db:
+        score = _require_ready_score(db, score_id)
         statement = select(Part).where(
             Part.score_id == score_id,
             Part.name == part_name,
@@ -181,7 +194,8 @@ def get_part_midi(score_id: str, part_name: str):
         if not midi_path.exists():
             raise HTTPException(status_code=404, detail="Part MIDI file not found")
 
-        return FileResponse(path=str(midi_path), media_type="audio/midi", filename=part.midi_filename)
+        filename = _download_name(score, "mid", suffix=f" - {part_name}")
+        return FileResponse(path=str(midi_path), media_type="audio/midi", filename=filename)
 
 
 @router.get("/{score_id}/export/{fmt}")
@@ -192,7 +206,8 @@ async def export_format(score_id: str, fmt: str):
         raise HTTPException(status_code=400, detail=f"Unknown format '{fmt}'. Supported: {', '.join(EXPORT_FORMATS)}")
 
     with Session(_get_engine()) as db:
-        _require_ready_score(db, score_id)
+        score = _require_ready_score(db, score_id)
+        filename = _download_name(score, fmt)
 
     media_type, _ = EXPORT_FORMATS[fmt]
     xml_path = _find_musicxml(score_id)
@@ -205,7 +220,7 @@ async def export_format(score_id: str, fmt: str):
     if not output_path.exists():
         raise HTTPException(status_code=500, detail=f"Export to {fmt} failed")
 
-    return FileResponse(path=str(output_path), media_type=media_type, filename=output_path.name)
+    return FileResponse(path=str(output_path), media_type=media_type, filename=filename)
 
 
 @router.get("/{score_id}/svg")
@@ -227,6 +242,33 @@ async def get_svg_info(score_id: str):
         pages = _find_svg_pages(score_id, xml_path.stem)
 
     return {"pages": len(pages)}
+
+
+@router.get("/{score_id}/original")
+def get_original(score_id: str):
+    """Serve the original uploaded file (image or PDF)."""
+    _validate_score_id(score_id)
+    with Session(_get_engine()) as db:
+        score = _require_ready_score(db, score_id)
+        filename = score.filename  # e.g. "input.pdf", "input.jpg"
+
+    from app.services.storage import score_upload_dir
+    upload_dir = score_upload_dir(score_id)
+    file_path = upload_dir / filename
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Original file not found")
+
+    ext = file_path.suffix.lower()
+    media_types = {
+        ".pdf":  "application/pdf",
+        ".png":  "image/png",
+        ".jpg":  "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".tiff": "image/tiff",
+        ".tif":  "image/tiff",
+    }
+    media_type = media_types.get(ext, "application/octet-stream")
+    return FileResponse(path=str(file_path), media_type=media_type)
 
 
 @router.get("/{score_id}/svg/{page}")
