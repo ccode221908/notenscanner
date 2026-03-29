@@ -244,31 +244,86 @@ async def get_svg_info(score_id: str):
     return {"pages": len(pages)}
 
 
-@router.get("/{score_id}/original")
-def get_original(score_id: str):
-    """Serve the original uploaded file (image or PDF)."""
-    _validate_score_id(score_id)
+def _original_file(score_id: str) -> tuple:
+    """Return (upload_dir, file_path, ext) for the original upload."""
+    from app.services.storage import score_upload_dir
     with Session(_get_engine()) as db:
         score = _require_ready_score(db, score_id)
-        filename = score.filename  # e.g. "input.pdf", "input.jpg"
-
-    from app.services.storage import score_upload_dir
+        filename = score.filename
     upload_dir = score_upload_dir(score_id)
     file_path = upload_dir / filename
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="Original file not found")
+    return upload_dir, file_path, file_path.suffix.lower()
 
-    ext = file_path.suffix.lower()
-    media_types = {
-        ".pdf":  "application/pdf",
-        ".png":  "image/png",
-        ".jpg":  "image/jpeg",
-        ".jpeg": "image/jpeg",
-        ".tiff": "image/tiff",
-        ".tif":  "image/tiff",
+
+async def _render_pdf_page_png(pdf_path: Path, page: int, output_path: Path) -> None:
+    """Render one PDF page to PNG using Ghostscript (150 dpi)."""
+    import asyncio
+    cmd = [
+        "gs", "-dNOPAUSE", "-dBATCH", "-dSAFER",
+        "-sDEVICE=png16m", "-r150",
+        f"-dFirstPage={page}", f"-dLastPage={page}",
+        f"-sOutputFile={output_path}",
+        str(pdf_path),
+    ]
+    proc = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    try:
+        _, stderr = await asyncio.wait_for(proc.communicate(), timeout=30)
+    except asyncio.TimeoutError:
+        proc.kill()
+        await proc.communicate()
+        raise RuntimeError(f"Ghostscript timed out rendering page {page}")
+    if proc.returncode != 0:
+        raise RuntimeError(f"Ghostscript failed (rc={proc.returncode}): {stderr.decode(errors='replace')}")
+
+
+@router.get("/{score_id}/original/info")
+def get_original_info(score_id: str):
+    """Return page count for the original upload."""
+    _validate_score_id(score_id)
+    _, file_path, ext = _original_file(score_id)
+    if ext == ".pdf":
+        from pypdf import PdfReader
+        pages = len(PdfReader(str(file_path)).pages)
+    else:
+        pages = 1
+    return {"pages": pages}
+
+
+@router.get("/{score_id}/original/page/{page}")
+async def get_original_page(score_id: str, page: int):
+    """Serve a page of the original as PNG (renders PDF pages on demand)."""
+    _validate_score_id(score_id)
+    upload_dir, file_path, ext = _original_file(score_id)
+
+    image_types = {
+        ".png": "image/png", ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg", ".tiff": "image/tiff", ".tif": "image/tiff",
     }
-    media_type = media_types.get(ext, "application/octet-stream")
-    return FileResponse(path=str(file_path), media_type=media_type)
+
+    if ext in image_types:
+        if page != 1:
+            raise HTTPException(status_code=404, detail="Page not found")
+        return FileResponse(str(file_path), media_type=image_types[ext])
+
+    if ext == ".pdf":
+        cache = upload_dir / f"preview_p{page}.png"
+        if not cache.exists():
+            try:
+                await _render_pdf_page_png(file_path, page, cache)
+            except Exception as exc:
+                logger.error("PDF page render failed: %s", exc)
+                raise HTTPException(status_code=500, detail="Failed to render PDF page")
+        if not cache.exists():
+            raise HTTPException(status_code=500, detail="Rendered page not found")
+        return FileResponse(str(cache), media_type="image/png")
+
+    raise HTTPException(status_code=400, detail="Unsupported file type")
 
 
 @router.get("/{score_id}/svg/{page}")

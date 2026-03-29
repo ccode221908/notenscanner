@@ -80,6 +80,14 @@ export function originalUrl(id: string): string {
   return `/api/scores/${id}/original`;
 }
 
+export function originalInfoUrl(id: string): string {
+  return `/api/scores/${id}/original/info`;
+}
+
+export function originalPageUrl(id: string, page: number): string {
+  return `/api/scores/${id}/original/page/${page}`;
+}
+
 // --- Auth API ---
 
 export async function createChallenge(): Promise<{

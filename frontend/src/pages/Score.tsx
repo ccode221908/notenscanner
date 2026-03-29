@@ -304,11 +304,9 @@ export default function Score() {
               <div style={{ flex: 1, minWidth: '280px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
                   <span style={{ fontSize: '13px', fontWeight: 600, color: '#374151' }}>Original</span>
-                  {(score.filename.split('.').pop()?.toLowerCase() !== 'pdf') && (
-                    <ZoomSlider zoom={originalZoom} onChange={setOriginalZoom} />
-                  )}
+                  <ZoomSlider zoom={originalZoom} onChange={setOriginalZoom} />
                 </div>
-                <OriginalViewer scoreId={score.id} filename={score.filename} zoom={originalZoom} />
+                <OriginalViewer scoreId={score.id} zoom={originalZoom} />
               </div>
               <div style={{ flex: 1, minWidth: '280px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>

@@ -48,7 +48,7 @@ export default function ScoreViewer({ scoreId, zoom = 1 }: ScoreViewerProps) {
       )}
       {pageCount !== null && (
         <div style={{ overflowX: 'auto', background: '#f0f0f0' }}>
-          <div style={{ width: `${zoom * 100}%`, minWidth: '100%' }}>
+          <div style={{ width: `${zoom * 100}%` }}>
             {Array.from({ length: pageCount }, (_, i) => (
               <div key={i} style={{ marginBottom: i < pageCount - 1 ? '12px' : 0 }}>
                 {pageCount > 1 && (
