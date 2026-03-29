@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import re
+from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from sqlmodel import Session, select
@@ -45,7 +46,6 @@ def _require_ready_score(db: Session, score_id: str) -> Score:
 
 def _download_name(score: Score, ext: str, suffix: str = "") -> str:
     """Return a sanitised download filename like 'Sinfonie Nr.5.pdf'."""
-    from pathlib import Path
     base = score.display_name or score.original_filename
     stem = Path(base).stem  # strip any existing extension
     name = f"{stem}{suffix}.{ext}"
